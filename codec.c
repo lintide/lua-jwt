@@ -123,11 +123,21 @@ static int codec_hmac_sha256_encode(lua_State *L)
   unsigned int n;
   const EVP_MD *evp = EVP_sha256();
   HMAC(evp, key, klen, (unsigned char *)cs, len, bs, &n);
-  int hexn = n * 2, i;
-  char dst[hexn];
-  for(i = 0; i < n; i++)
-    sprintf(dst + i * 2, "%02x", bs[i]);
-  lua_pushlstring(L, dst, hexn);
+
+  BIO *b64 = BIO_new(BIO_f_base64());
+  BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+  BIO *bio = BIO_new(BIO_s_mem());
+  bio = BIO_push(b64, bio);
+  BIO_write(bio, bs, n);
+  BIO_flush(bio);
+  BUF_MEM *p;
+  BIO_get_mem_ptr(bio, &p);
+  int pn = p->length;
+  char dst[pn];
+  memcpy(dst, p->data, pn);
+  BIO_free_all(bio);
+  lua_pushlstring(L, dst, pn);
+
   return 1;
 }
 
@@ -145,7 +155,7 @@ static int codec_aes_encrypt(lua_State *L)
 {
   size_t len;
   const char *src = lua_tolstring(L, 1, &len);
-  char *key = lua_tostring(L, 2);
+  const char *key = lua_tostring(L, 2);
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
   int ret = EVP_EncryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, (unsigned char *)key, NULL);
   if(ret != 1)
@@ -191,7 +201,7 @@ static int codec_aes_decrypt(lua_State *L)
 {
   size_t len;
   const char *src = lua_tolstring(L, 1, &len);
-  char *key = lua_tostring(L, 2);
+  const char *key = lua_tostring(L, 2);
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
   int ret = EVP_DecryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, (unsigned char *)key, NULL);
   if(ret != 1)
@@ -237,7 +247,7 @@ static int codec_rsa_private_sign(lua_State *L)
 {
   size_t len;
   const char *src = lua_tolstring(L, 1, &len);
-  char *pem = lua_tostring(L, 2);
+  const char *pem = lua_tostring(L, 2);
   SHA_CTX c;
   unsigned char sha[SHA_DIGEST_LENGTH];
   memset(sha, 0, SHA_DIGEST_LENGTH);
@@ -308,7 +318,7 @@ static int codec_rsa_public_verify(lua_State *L)
   size_t srclen, signlen;
   const char *src = lua_tolstring(L, 1, &srclen);
   const char *sign = lua_tolstring(L, 2, &signlen);
-  char *pem = lua_tostring(L, 3);
+  const char *pem = lua_tostring(L, 3);
   int type = lua_tointeger(L, 4);
   SHA_CTX ctx;
   int ctxlen = sizeof(ctx);
@@ -368,7 +378,7 @@ static int codec_rsa_public_encrypt(lua_State *L)
 {
   size_t len;
   const char *src = lua_tolstring(L, 1, &len);
-  char *pem = lua_tostring(L, 2);
+  const char *pem = lua_tostring(L, 2);
   int type = lua_tointeger(L, 3);
   BIO *bio = BIO_new_mem_buf((void *)pem, -1);
   if(bio == NULL)
@@ -413,7 +423,7 @@ static int codec_rsa_public_encrypt(lua_State *L)
 static int codec_rsa_private_decrypt(lua_State *L)
 {
   const char *src = lua_tostring(L, 1);
-  char *pem = lua_tostring(L, 2);
+  const char *pem = lua_tostring(L, 2);
   BIO *bio = BIO_new_mem_buf((void *)pem, -1);
   if(bio == NULL)
   {
